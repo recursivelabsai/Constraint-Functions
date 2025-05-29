@@ -28,6 +28,17 @@ The Constraint Functions framework provides a revolutionary approach to AI devel
 
 This framework is built on the insight that intelligence emerges not despite limitations but because of them—constraints drive systems to develop more efficient, elegant, and powerful solutions than unconstrained approaches.
 
+
+
+<div align="center">
+  
+
+https://github.com/user-attachments/assets/f4712f96-cf38-47e8-9439-3769bc361567
+
+
+
+</div>
+
 ## Key Concepts
 
 ### The Universal Residue Equation
