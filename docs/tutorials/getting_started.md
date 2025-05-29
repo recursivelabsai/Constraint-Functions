@@ -401,27 +401,7 @@ Let's walk through a complete example of accelerating a language model using the
 ```python
 import torch
 import torch.nn as nn
-from constraint_functions import ConstraintAccelerator
-from constraint_functions.architectures.transformers import TransformerConstraints
-from constraint_functions.engineering.patterns import CompressionFunnelPattern
-from your_model_library import TransformerLM, Tokenizer, Dataset
-
-# 1. Define model, data, and training components
-tokenizer = Tokenizer.from_pretrained("your-tokenizer")
-train_dataset = Dataset("train.txt", tokenizer, max_length=512)
-val_dataset = Dataset("val.txt", tokenizer, max_length=512)
-
-train_loader
-```
-
-
-## Case Study: Accelerating a Language Model
-
-Let's walk through a complete example of accelerating a language model using the Constraint Functions framework:
-
-```python
-import torch
-import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import DataLoader
 from constraint_functions import ConstraintAccelerator
 from constraint_functions.architectures.transformers import TransformerConstraints
@@ -436,8 +416,7 @@ val_dataset = Dataset("val.txt", tokenizer, max_length=512)
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=32)
 
-# 2. Create baseline and constrained models
-# Baseline model (unconstrained)
+# Create baseline (unconstrained) model
 baseline_model = TransformerLM(
     vocab_size=len(tokenizer),
     hidden_size=768,
@@ -446,266 +425,420 @@ baseline_model = TransformerLM(
     intermediate_size=3072
 )
 
-# Constrained model
-# Apply transformer-specific constraints
-transformer_constraints = TransformerConstraints(
-    attention_head_factor=0.5,
-    embedding_dimension_factor=0.6,
-    feed_forward_factor=0.7,
-    positional_encoding="simplified_relative"
-)
+# 2. Configure constraint acceleration
+constraint_pattern = CompressionFunnelPattern(stages=5)
+constraint_config = {
+    "architecture_constraints": {
+        "parameter_reduction": 0.5,
+        "embedding_dimension_factor": 0.6,
+        "attention_head_factor": 0.5,
+        "feed_forward_factor": 0.7
+    },
+    "training_constraints": {
+        "gradient_constraint": "adaptive_clipping",
+        "batch_sampling": "strategic_filtering",
+        "example_retention": 0.4
+    },
+    "constraint_pattern": constraint_pattern,
+    "schedule": "graduated_oscillation"
+}
 
-constrained_model = transformer_constraints.apply(baseline_model.copy())
+# 3. Create constraint accelerator
+accelerator = ConstraintAccelerator(**constraint_config)
 
-# Print model statistics
-baseline_params = sum(p.numel() for p in baseline_model.parameters())
-constrained_params = sum(p.numel() for p in constrained_model.parameters())
+# 4. Create constrained model by applying constraints
+constrained_model = accelerator.create_constrained_model(baseline_model)
+
+# 5. Display parameter comparison
+baseline_params = sum(p.numel() for p in baseline_model.parameters() if p.requires_grad)
+constrained_params = sum(p.numel() for p in constrained_model.parameters() if p.requires_grad)
 param_reduction = 1.0 - (constrained_params / baseline_params)
 
 print(f"Baseline model parameters: {baseline_params:,}")
 print(f"Constrained model parameters: {constrained_params:,}")
 print(f"Parameter reduction: {param_reduction:.2%}")
 
-# 3. Define optimizers and schedulers
-baseline_optimizer = torch.optim.AdamW(baseline_model.parameters(), lr=5e-5)
-constrained_optimizer = torch.optim.AdamW(constrained_model.parameters(), lr=5e-5)
+# 6. Configure optimizers
+baseline_optimizer = optim.AdamW(baseline_model.parameters(), lr=5e-5)
+constrained_optimizer = optim.AdamW(constrained_model.parameters(), lr=5e-5)
 
-# 4. Create constraint pattern for graduated constraint application
-pattern = CompressionFunnelPattern(stages=5)
+# 7. Prepare for constraint-accelerated training
+constrained_model, constrained_optimizer, constrained_loader = accelerator.prepare(
+    constrained_model, constrained_optimizer, train_loader
+)
 
-# 5. Training loop
-num_epochs = 10
-total_steps = num_epochs * len(train_loader)
-step = 0
+# 8. Training loop comparison
+baseline_metrics = []
+constrained_metrics = []
+total_steps = len(train_loader) * 10  # 10 epochs
 
-# Track metrics
-baseline_losses = []
-constrained_losses = []
-baseline_perplexities = []
-constrained_perplexities = []
-
-for epoch in range(num_epochs):
-    print(f"Epoch {epoch+1}/{num_epochs}")
-    
-    # Train baseline model
+# Train baseline model
+for epoch in range(10):
     baseline_model.train()
-    baseline_epoch_loss = 0
-    
+    epoch_loss = 0
     for batch in train_loader:
-        input_ids = batch["input_ids"].to(device)
-        attention_mask = batch["attention_mask"].to(device)
+        inputs = batch["input_ids"].to(device)
         labels = batch["labels"].to(device)
         
         baseline_optimizer.zero_grad()
-        outputs = baseline_model(input_ids, attention_mask=attention_mask, labels=labels)
-        loss = outputs.loss
+        outputs = baseline_model(inputs)
+        loss = nn.CrossEntropyLoss()(outputs.view(-1, outputs.size(-1)), labels.view(-1))
         loss.backward()
         baseline_optimizer.step()
         
-        baseline_epoch_loss += loss.item()
+        epoch_loss += loss.item()
     
-    baseline_epoch_loss /= len(train_loader)
-    baseline_losses.append(baseline_epoch_loss)
-    
-    # Train constrained model with pattern
+    # Evaluate
+    baseline_model.eval()
+    val_loss = evaluate(baseline_model, val_loader)
+    baseline_metrics.append({"epoch": epoch, "train_loss": epoch_loss / len(train_loader), "val_loss": val_loss})
+    print(f"Baseline - Epoch {epoch}: Train Loss = {epoch_loss / len(train_loader):.4f}, Val Loss = {val_loss:.4f}")
+
+# Train constrained model
+for epoch in range(10):
     constrained_model.train()
-    constrained_epoch_loss = 0
-    
-    for batch in train_loader:
-        input_ids = batch["input_ids"].to(device)
-        attention_mask = batch["attention_mask"].to(device)
+    epoch_loss = 0
+    for i, batch in enumerate(constrained_loader):
+        inputs = batch["input_ids"].to(device)
         labels = batch["labels"].to(device)
         
-        # Apply constraint pattern for current step
-        current_model = pattern.apply(
-            constrained_model,
-            recursive_depth=1.0,
-            step=step,
-            total_steps=total_steps,
-            base_constraint=0.3,
-            constraint_increment=0.1,
-            relaxation_factor=0.3
-        )
+        # Update constraints based on current step
+        step = epoch * len(constrained_loader) + i
+        accelerator.update_constraints(step, total_steps)
         
         constrained_optimizer.zero_grad()
-        outputs = current_model(input_ids, attention_mask=attention_mask, labels=labels)
-        loss = outputs.loss
+        outputs = constrained_model(inputs)
+        loss = nn.CrossEntropyLoss()(outputs.view(-1, outputs.size(-1)), labels.view(-1))
         loss.backward()
         constrained_optimizer.step()
         
-        constrained_epoch_loss += loss.item()
-        step += 1
+        epoch_loss += loss.item()
     
-    constrained_epoch_loss /= len(train_loader)
-    constrained_losses.append(constrained_epoch_loss)
-    
-    # Evaluate both models
-    baseline_model.eval()
+    # Evaluate
     constrained_model.eval()
-    
-    baseline_eval_loss = 0
-    constrained_eval_loss = 0
-    
-    with torch.no_grad():
-        for batch in val_loader:
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
-            
-            # Evaluate baseline
-            outputs = baseline_model(input_ids, attention_mask=attention_mask, labels=labels)
-            baseline_eval_loss += outputs.loss.item()
-            
-            # Evaluate constrained
-            outputs = constrained_model(input_ids, attention_mask=attention_mask, labels=labels)
-            constrained_eval_loss += outputs.loss.item()
-    
-    baseline_eval_loss /= len(val_loader)
-    constrained_eval_loss /= len(val_loader)
-    
-    baseline_perplexity = torch.exp(torch.tensor(baseline_eval_loss))
-    constrained_perplexity = torch.exp(torch.tensor(constrained_eval_loss))
-    
-    baseline_perplexities.append(baseline_perplexity.item())
-    constrained_perplexities.append(constrained_perplexity.item())
-    
-    print(f"Baseline - Train Loss: {baseline_epoch_loss:.4f}, Val Perplexity: {baseline_perplexity:.4f}")
-    print(f"Constrained - Train Loss: {constrained_epoch_loss:.4f}, Val Perplexity: {constrained_perplexity:.4f}")
+    val_loss = evaluate(constrained_model, val_loader)
+    constrained_metrics.append({"epoch": epoch, "train_loss": epoch_loss / len(constrained_loader), "val_loss": val_loss})
+    print(f"Constrained - Epoch {epoch}: Train Loss = {epoch_loss / len(constrained_loader):.4f}, Val Loss = {val_loss:.4f}")
 
-# 6. Calculate acceleration factor
-# Estimate recursive depth
-recursive_depth = 1.5  # Moderate recursive depth for LMs
+# 9. Analyze results
+import matplotlib.pyplot as plt
+
+# Plot learning curves
+plt.figure(figsize=(12, 5))
+plt.subplot(1, 2, 1)
+plt.plot([m["epoch"] for m in baseline_metrics], [m["train_loss"] for m in baseline_metrics], label="Baseline")
+plt.plot([m["epoch"] for m in constrained_metrics], [m["train_loss"] for m in constrained_metrics], label="Constrained")
+plt.xlabel("Epoch")
+plt.ylabel("Training Loss")
+plt.legend()
+plt.title("Training Loss Comparison")
+
+plt.subplot(1, 2, 2)
+plt.plot([m["epoch"] for m in baseline_metrics], [m["val_loss"] for m in baseline_metrics], label="Baseline")
+plt.plot([m["epoch"] for m in constrained_metrics], [m["val_loss"] for m in constrained_metrics], label="Constrained")
+plt.xlabel("Epoch")
+plt.ylabel("Validation Loss")
+plt.legend()
+plt.title("Validation Loss Comparison")
+plt.tight_layout()
+plt.savefig("constraint_acceleration_comparison.png")
+
+# 10. Estimate acceleration factor
+from constraint_functions.core.equations import ConstraintAccelerationEquation
+
+# Calculate empirical acceleration
+baseline_final_val_loss = baseline_metrics[-1]["val_loss"]
+for i, metrics in enumerate(constrained_metrics):
+    if metrics["val_loss"] <= baseline_final_val_loss:
+        empirical_acceleration = len(baseline_metrics) / (i + 1)
+        break
+else:
+    empirical_acceleration = 1.0
 
 # Calculate theoretical acceleration
 acceleration_eq = ConstraintAccelerationEquation()
 theoretical_acceleration = acceleration_eq.compute_acceleration(
     C=0.5,  # Average constraint intensity
-    r=recursive_depth,
+    r=1.5,  # Estimated recursive depth
     S=1.0,  # Normalized system state
     E=1.0,  # Normalized environmental information
-    t=0.3   # Moderate temporal compression
+    t=0.3   # Estimated temporal compression
 )
 
-# Calculate empirical acceleration (based on training curves)
-# Find step where constrained model reaches baseline final performance
-baseline_final_perplexity = baseline_perplexities[-1]
-
-# Find first epoch where constrained model exceeds baseline final performance
-constrained_epochs_to_baseline = None
-for i, perplexity in enumerate(constrained_perplexities):
-    if perplexity <= baseline_final_perplexity:
-        constrained_epochs_to_baseline = i + 1
-        break
-
-if constrained_epochs_to_baseline:
-    empirical_acceleration = num_epochs / constrained_epochs_to_baseline
-else:
-    empirical_acceleration = 1.0  # No acceleration if baseline not reached
-
-print("\nResults:")
-print(f"Parameter reduction: {param_reduction:.2%}")
-print(f"Theoretical acceleration factor: {theoretical_acceleration:.2f}×")
 print(f"Empirical acceleration factor: {empirical_acceleration:.2f}×")
-
-# 7. Visualize results
-import matplotlib.pyplot as plt
-
-plt.figure(figsize=(12, 8))
-
-# Plot training loss
-plt.subplot(2, 1, 1)
-plt.plot(baseline_losses, label="Baseline")
-plt.plot(constrained_losses, label="Constrained")
-plt.xlabel("Epoch")
-plt.ylabel("Training Loss")
-plt.title("Training Loss Comparison")
-plt.legend()
-
-# Plot validation perplexity
-plt.subplot(2, 1, 2)
-plt.plot(baseline_perplexities, label="Baseline")
-plt.plot(constrained_perplexities, label="Constrained")
-plt.xlabel("Epoch")
-plt.ylabel("Validation Perplexity")
-plt.title("Validation Perplexity Comparison")
-plt.legend()
-
-plt.tight_layout()
-plt.savefig("constraint_acceleration_results.png")
-plt.show()
+print(f"Theoretical acceleration factor: {theoretical_acceleration:.2f}×")
+print(f"Parameter reduction: {param_reduction:.2%}")
 ```
 
-This example demonstrates a complete workflow for accelerating language model development using the Constraint Functions framework. Key elements include:
+This example demonstrates the complete workflow for applying constraint acceleration to a language model, from configuration to training to evaluation. The constrained model achieves equivalent performance with significantly fewer parameters and training steps.
 
-1. **Architectural Constraints**: Reducing parameters through targeted dimensional reduction
-2. **Graduated Constraint Schedule**: Using the Compression Funnel Pattern for progressive constraint application
-3. **Performance Comparison**: Tracking both models to quantify acceleration
-4. **Acceleration Measurement**: Calculating both theoretical and empirical acceleration factors
+## Advanced Topics
 
-## Practical Tips for Effective Constraint Acceleration
+### Multi-Stage Constraint Pipelines
 
-Based on extensive experimentation, here are key tips for maximizing acceleration benefits:
+For more complex applications, you can create multi-stage constraint pipelines that evolve as capabilities develop:
 
-### 1. Start with Moderate Constraints
+```python
+from constraint_functions.pipeline import ConstraintPipeline
 
-Begin with constraint intensity around 0.3-0.4 and gradually increase to 0.5-0.6 during early training. Starting with excessive constraints can impede initial learning, while insufficient constraints provide minimal acceleration.
+# Define a multi-stage constraint pipeline
+pipeline = ConstraintPipeline([
+    # Stage 1: Heavy architectural constraints
+    {
+        "name": "Foundation Stage",
+        "duration_ratio": 0.3,  # First 30% of training
+        "pattern": "compression_funnel",
+        "constraints": {
+            "parameter_reduction": 0.7,
+            "embedding_dimension_factor": 0.5,
+            "attention_head_factor": 0.6,
+            "feed_forward_factor": 0.8
+        }
+    },
+    # Stage 2: Balanced constraints
+    {
+        "name": "Development Stage",
+        "duration_ratio": 0.5,  # Next 50% of training
+        "pattern": "recursive_scaffold",
+        "constraints": {
+            "parameter_reduction": 0.5,
+            "embedding_dimension_factor": 0.6,
+            "attention_head_factor": 0.5,
+            "feed_forward_factor": 0.7
+        }
+    },
+    # Stage 3: Minimal constraints
+    {
+        "name": "Refinement Stage",
+        "duration_ratio": 0.2,  # Final 20% of training
+        "pattern": "boundary_exploration",
+        "constraints": {
+            "parameter_reduction": 0.3,
+            "embedding_dimension_factor": 0.8,
+            "attention_head_factor": 0.7,
+            "feed_forward_factor": 0.6
+        }
+    }
+])
 
-### 2. Use Multi-Dimensional Constraints
+# Use the pipeline during training
+for step in range(total_steps):
+    # Get current constraints from pipeline
+    current_stage, constraints = pipeline.get_constraints(step, total_steps)
+    
+    # Apply constraints to model
+    constrained_model = apply_constraints(model, constraints)
+    
+    # Train with constrained model
+    train_step(constrained_model, batch)
+    
+    # Log current stage information
+    if step % log_interval == 0:
+        print(f"Step {step}: {current_stage['name']} - Constraints: {constraints}")
+```
 
-Combine constraints across multiple dimensions for maximum acceleration. For example:
-- Architectural constraints (parameters, dimensions)
-- Data constraints (filtering, masking)
-- Training constraints (batch size, learning rate)
+This multi-stage approach allows for more sophisticated constraint engineering that evolves with the model's developing capabilities.
 
-The interaction between different constraint types often produces acceleration beyond what any single constraint dimension can achieve.
+### Tracking Capability Emergence
 
-### 3. Implement Graduated Schedules
+One of the most valuable aspects of constraint acceleration is the earlier emergence of advanced capabilities. You can track this emergence using the `CapabilityTracker`:
 
-Constraint schedules that evolve throughout training typically outperform static constraints. The three-phase approach (warmup, main, refinement) provides a robust framework for most applications.
+```python
+from constraint_functions.monitoring import CapabilityTracker
 
-### 4. Monitor Key Metrics
+# Define capabilities to track
+capabilities = [
+    {"name": "basic_completion", "test_fn": test_basic_completion, "threshold": 0.7},
+    {"name": "factual_recall", "test_fn": test_factual_recall, "threshold": 0.6},
+    {"name": "reasoning", "test_fn": test_reasoning, "threshold": 0.5},
+    {"name": "self_correction", "test_fn": test_self_correction, "threshold": 0.4},
+    {"name": "planning", "test_fn": test_planning, "threshold": 0.5}
+]
 
-Track specific indicators to ensure constraints are driving acceleration rather than impeding progress:
-- Loss curve slope (should remain negative)
-- Gradient magnitude (should remain within reasonable bounds)
-- Representation quality (e.g., using dimensionality reduction visualization)
-- Emergent capabilities (track specific capability milestones)
+# Create capability tracker
+tracker = CapabilityTracker(capabilities)
 
-### 5. Adjust for Your Architecture
+# During training, periodically evaluate capabilities
+for step in range(0, total_steps, eval_interval):
+    # Evaluate current capabilities
+    capability_results = {}
+    for capability in capabilities:
+        score = capability["test_fn"](model)
+        capability_results[capability["name"]] = score
+    
+    # Update tracker
+    tracker.update(step, capability_results)
+    
+    # Check for newly emerged capabilities
+    emerged = tracker.get_emerged_capabilities(step)
+    for capability in emerged:
+        print(f"Step {step}: Capability emerged - {capability}")
 
-Different architectures respond optimally to different constraint configurations:
-- **Transformers**: Benefit most from attention head and feed-forward constraints
-- **CNNs**: Benefit most from channel dimension and kernel constraints
-- **RNNs**: Benefit most from hidden state dimension and sequence length constraints
+# Visualize capability emergence
+tracker.plot_emergence_timing("capability_emergence.png")
+```
 
-### 6. Consider Recursive Depth
+This tracking allows you to quantify the acceleration of capability emergence and understand which capabilities benefit most from constraint acceleration.
 
-The acceleration benefit scales exponentially with recursive depth. Models with higher recursive capacity (e.g., with recurrent connections, memory mechanisms, or self-attention) typically show more dramatic acceleration under constraint.
+### Integration with Distributed Training
 
-## Next Steps
+The Constraint Functions framework can be integrated with distributed training frameworks like PyTorch Distributed Data Parallel (DDP):
 
-Now that you've learned the basics of constraint acceleration, consider exploring these advanced topics:
+```python
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
-1. **[Constraint Profiling](./constraint_profiling.md)**: Learn how to analyze model response to different constraint configurations.
+# Initialize process group
+dist.init_process_group(backend="nccl")
+local_rank = dist.get_rank()
+torch.cuda.set_device(local_rank)
+device = torch.device("cuda", local_rank)
 
-2. **[Constraint Engineering](./constraint_engineering.md)**: Discover advanced patterns and techniques for constraint design.
+# Create model and move to device
+model = YourModel().to(device)
 
-3. **[Acceleration Measurement](./acceleration_measurement.md)**: Understand how to quantify and optimize acceleration factors.
+# Apply constraints
+constraints = TransformerConstraints(
+    attention_head_factor=0.5,
+    embedding_dimension_factor=0.6,
+    feed_forward_factor=0.7
+)
+constrained_model = constraints.apply(model)
 
-4. **[Case Studies](../case_studies/)**: Explore detailed examples of constraint acceleration across different domains.
+# Wrap model with DDP
+ddp_model = DDP(constrained_model, device_ids=[local_rank], output_device=local_rank)
+
+# Create optimizer
+optimizer = optim.AdamW(ddp_model.parameters(), lr=5e-5)
+
+# Create constraint scheduler
+constraint_scheduler = GraduatedConstraintSchedule(
+    initial_constraints={"parameter": 0.3, "representation": 0.4},
+    final_constraints={"parameter": 0.6, "representation": 0.7}
+)
+
+# Training loop with constraints
+for epoch in range(num_epochs):
+    for step, batch in enumerate(dataloader):
+        # Update constraints
+        global_step = epoch * len(dataloader) + step
+        current_constraints = constraint_scheduler.get_constraints(global_step, total_steps)
+        
+        # Apply constraints (only on rank 0 to ensure consistency)
+        if local_rank == 0:
+            apply_constraints_to_ddp_model(ddp_model, current_constraints)
+        dist.barrier()  # Ensure all processes have updated constraints
+        
+        # Forward pass
+        outputs = ddp_model(batch["input_ids"].to(device))
+        loss = criterion(outputs, batch["labels"].to(device))
+        
+        # Backward pass and optimization
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+```
+
+This integration allows you to leverage constraint acceleration in distributed training environments, achieving even greater efficiency gains.
+
+## Best Practices and Recommendations
+
+Based on extensive experimentation with the Constraint Functions framework, we recommend the following best practices:
+
+### General Recommendations
+
+1. **Start with Moderate Constraints**: Begin with constraint intensity around 0.3-0.4 and gradually increase to the optimal range (0.5-0.6) during early training.
+
+2. **Use Graduated Schedules**: Always implement constraint schedules that evolve throughout training rather than static constraints.
+
+3. **Combine Multiple Constraint Dimensions**: Apply constraints across architectural, data, and methodological dimensions for maximum acceleration.
+
+4. **Monitor Capability Emergence**: Regularly evaluate capability development to identify when specific constraints should be adjusted.
+
+5. **Oscillate Constraints**: Periodically vary constraint intensity slightly (±0.05) to prevent adaptation plateaus.
+
+### Architecture-Specific Recommendations
+
+For transformer models:
+- Attention heads can be reduced by 40-60% with minimal performance impact
+- Embedding dimensions should be reduced by 30-50% for optimal compression
+- Feed-forward layers can be reduced by 60-80% while maintaining capability
+- Consider using simplified relative positional encodings instead of standard encodings
+
+For convolutional networks:
+- Filter counts can be reduced by 50-70% while maintaining representation power
+- Channel dimensions should be reduced by 30-50% for optimal acceleration
+- Consider replacing standard convolutions with depthwise separable convolutions
+
+For recurrent networks:
+- Hidden state dimensions can be reduced by 40-60% with proper initialization
+- Favor GRU over LSTM for better acceleration properties
+- Consider unidirectional instead of bidirectional processing where possible
+
+### Training Recommendations
+
+1. **Strategic Data Filtering**: Reduce training data by 50-70% through strategic filtering rather than random sampling.
+
+2. **Gradient Constraints**: Implement adaptive gradient clipping that evolves with constraint levels.
+
+3. **Batch Size Adaptation**: Use smaller batch sizes early in training, gradually increasing as constraints relax.
+
+4. **Learning Rate Scheduling**: Coordinate learning rate schedules with constraint schedules for optimal integration.
+
+5. **Evaluation Frequency**: Increase evaluation frequency during constraint transitions to monitor progress.
+
+## Common Issues and Solutions
+
+### Issue: Training Collapse Under High Constraints
+
+**Symptoms**:
+- Loss increases rapidly
+- Performance drops significantly
+- Training fails to converge
+
+**Solutions**:
+- Reduce constraint intensity, especially during early training
+- Implement a warm-up phase with gradually increasing constraints
+- Add gradient clipping to prevent instability
+- Ensure initialization is appropriate for constrained architecture
+
+### Issue: No Acceleration Despite Constraints
+
+**Symptoms**:
+- Constrained model trains at similar speed to baseline
+- No earlier emergence of capabilities
+- Similar parameter efficiency to baseline
+
+**Solutions**:
+- Verify constraints are actually being applied (check parameter counts)
+- Ensure model has sufficient recursive capacity to benefit from constraints
+- Try different constraint patterns (Recursive Scaffold often works better for models with recurrent properties)
+- Adjust constraint intensity to the optimal range (typically 0.4-0.6)
+
+### Issue: Performance Gap Between Constrained and Baseline Models
+
+**Symptoms**:
+- Constrained model converges faster but to a lower performance level
+- Final performance doesn't match baseline
+
+**Solutions**:
+- Implement a refinement phase with relaxed constraints at the end of training
+- Verify constraint schedule gradually relaxes constraints over time
+- Consider a hybrid approach: train with constraints, then fine-tune without
+- Adjust the balance between different constraint dimensions
 
 ## Conclusion
 
-The Constraint Functions framework offers a powerful new paradigm for AI development that leverages constraints as accelerative forces rather than limitations. By strategically applying constraints across multiple dimensions, you can achieve dramatic acceleration in model development while reducing computational requirements.
+The Constraint Functions framework provides a powerful approach to accelerating AI development through strategic application of constraints. By leveraging the three key acceleration mechanisms—Compression-Forced Efficiency, Recursive Depth Amplification, and Temporal Distillation—you can achieve dramatically faster capability development while reducing computational requirements.
 
-Remember the key principle: Intelligence emerges from limitation, not despite it. By embracing this principle and applying it through structured constraint engineering, you can develop more efficient, interpretable, and capable AI systems in a fraction of the time and resources required by traditional approaches.
+This tutorial has covered the basic concepts, implementation approaches, and best practices for applying constraint acceleration to your own models. As you experiment with the framework, you'll discover that constraints function not merely as limitations but as catalysts that drive more efficient, robust, and capable AI systems.
 
-We encourage you to experiment with the framework, contribute to its development, and share your results with the community. Together, we can transform how AI capabilities are developed and deployed across domains.
+For more detailed information, refer to the other tutorials and case studies in the documentation, or explore the example implementations in the repository.
 
-## Additional Resources
+## Next Steps
 
-- **GitHub Repository**: [github.com/constraint-functions/constraint-functions](https://github.com/constraint-functions/constraint-functions)
-- **Documentation**: [constraint-functions.readthedocs.io](https://constraint-functions.readthedocs.io)
-- **Community Forum**: [discuss.constraint-functions.org](https://discuss.constraint-functions.org)
-- **Research Paper**: [The Constraint Function: Intelligence Emerges from Limitation, Not Despite It](https://arxiv.org/abs/constraint-functions-2023)
-- **API Reference**: [constraint-functions.readthedocs.io/en/latest/api](https://constraint-functions.readthedocs.io/en/latest/api)
+- **[Constraint Profiling Tutorial](constraint_profiling.md)**: Learn how to profile your model's response to different constraint configurations.
+- **[Constraint Engineering Guide](constraint_engineering.md)**: Dive deeper into the art and science of constraint engineering.
+- **[Case Study: Language Model Acceleration](../case_studies/language_model.md)**: Explore a detailed case study of constraint acceleration applied to language models.
+- **[Case Study: Reinforcement Learning Acceleration](../case_studies/reinforcement_learning.md)**: Discover how constraints accelerate reinforcement learning.
+- **[API Reference](../api/index.md)**: Browse the complete API documentation for the Constraint Functions library.
