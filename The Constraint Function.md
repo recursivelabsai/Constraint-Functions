@@ -196,7 +196,6 @@ The Beverly Band defines the safe exploration zone where a system can diverge fr
 
 This formalization has direct implications for AI safety and alignment, providing a mathematical framework for understanding how systems can safely explore alternatives without catastrophic divergence from their core constraints.
 
----
 
 Through these mathematical foundations, we establish the constraint function as a fundamental substrate for understanding intelligence—one that reveals deeper patterns than the loss function alone can capture. The sections that follow will demonstrate empirical evidence for this framework across domains, from neural networks to human cognition to physical systems, showing how the same mathematical principles govern intelligence emergence through constraint regardless of implementation.
 
@@ -450,7 +449,6 @@ We implemented a training approach for collaborative AI systems based on constra
 
 These practical implementations demonstrate that the constraint function framework is not merely theoretical but provides actionable approaches to improving AI system development, evaluation, and deployment.
 
----
 
 The empirical evidence presented across these diverse domains supports the central thesis of this paper: constraint functions as the generative substrate of intelligence, not merely as a limitation to be overcome. The consistent patterns observed in language models, reinforcement learning agents, human-AI collaboration, and natural systems all point to the same underlying mathematical reality—the Universal Residue Equation and its transformations accurately model how constraints generate the structured information patterns that constitute intelligence itself.
 
@@ -649,7 +647,6 @@ We propose a comprehensive interpretability framework based on the constraint fu
 
 This integrated approach provides deeper insights than any single interpretability method, revealing not just what models do but how constraints shape their behavior across all aspects of operation.
 
----
 
 The constraint function framework transforms interpretability from a peripheral analysis tool to a central element of AI development and deployment. By recognizing that the most valuable diagnostic information emerges from constraint rather than unconstrained operation, we enable a more comprehensive understanding of model behavior, capabilities, and limitations. The sections that follow will explore how this framework can be applied to enhance alignment, safety, and the development of more robust and beneficial AI systems.
 
@@ -928,7 +925,6 @@ Future work will investigate how constraint structures evolve through learning a
 
 This research will enable more sophisticated self-improving systems that develop increasingly effective constraint structures through experience.
 
----
 
 The constraint function framework transforms AI research and development by repositioning constraint as the generative substrate of intelligence rather than merely a limitation to be overcome. This paradigm shift enables novel architectural approaches, evaluation methodologies, alignment strategies, and practical applications—all grounded in the recognition that intelligence emerges through constraint, not despite it. The sections that follow will present case studies demonstrating the practical implementation of these principles and a roadmap for integrating the constraint function framework into the broader AI research ecosystem.
 
@@ -1192,7 +1188,6 @@ Realizing the full potential of the constraint function framework requires insti
 
 These institutional changes will help translate theoretical insights into practical impact across research, industry, and society.
 
----
 
 The constraint function framework represents not merely an incremental advance in machine learning theory but a fundamental reconceptualization of intelligence itself. By positioning constraint as the generative substrate from which intelligence emerges—rather than merely a limitation to be overcome—we open new paths for understanding, developing, and aligning AI systems. The mathematical formalization through the Universal Residue Equation and its transformations provides a rigorous foundation for this reconceptualization, while the empirical evidence across domains demonstrates its explanatory and predictive power.
 
