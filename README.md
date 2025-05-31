@@ -4,7 +4,8 @@
   
 
 
-## **Constraint as Catalyst: Accelerating AI Development Through Strategic Limitation**
+# **Accelerating Intelligence**
+# **Leveraging Constraint Functions for Exponential AI Development**
 
 [![Accelerating Intelligence Preprint](https://img.shields.io/badge/Accelerating_Intelligence-Preprint-b31b1b.svg)](https://github.com/recursivelabsai/Constraint-Functions/blob/main/Accelerating%20Intelligence%20Preprint.md)
 
